@@ -12,7 +12,12 @@ interface BondDetailsProps {
 
 const BondDetails = ({ socket, bond, onBack }: BondDetailsProps) => {
   const [showOrderModal, setShowOrderModal] = useState(false);
-  const [order, setOrder] = useState<{ type: 'bid' | 'ask', qty: number, price: number }>();
+  const [order, setOrder] = useState<{ 
+    type: 'bid' | 'ask', 
+    qty: number, 
+    price: number,
+    orderType: 'limit' | 'market'
+  }>();
   const [orderBook, setOrderBook] = useState<{
     bids: Order[],
     asks: Order[]
@@ -31,6 +36,7 @@ const BondDetails = ({ socket, bond, onBack }: BondDetailsProps) => {
     return { bids, asks };
   };
 
+  // Initial order book fetch
   useEffect(() => {
     generateOrderBook()
     .then(res => {
@@ -46,8 +52,51 @@ const BondDetails = ({ socket, bond, onBack }: BondDetailsProps) => {
     })
   }, [showOrderModal]);
 
+  // WebSocket message listener for real-time updates
+  useEffect(() => {
+    if (!socket) return;
+
+    const handleMessage = (event: MessageEvent) => {
+      try {
+        const data = JSON.parse(event.data);
+        
+        // Store user ID when we get the connection confirmation
+        if (data.message === "Connected to WebSocket" && data.id) {
+          localStorage.setItem("userID", data.id);
+        }
+        
+        // Update order book when receiving bids/asks data
+        if (data.bids && data.asks) {
+          setOrderBook({
+            bids: data.bids,
+            asks: data.asks
+          });
+        }
+        
+        // Handle trade execution updates
+        if (data.trade) {
+          console.log('Trade executed:', data.trade);
+        }
+        
+        // Handle order confirmations
+        if (data.message && (data.message.includes('order placed') || data.message.includes('cancelled'))) {
+          console.log('Order update:', data.message);
+        }
+      } catch (error) {
+        console.error('Error parsing WebSocket message:', error);
+      }
+    };
+
+    socket.addEventListener('message', handleMessage);
+
+    // Cleanup listener on unmount or socket change
+    return () => {
+      socket.removeEventListener('message', handleMessage);
+    };
+  }, [socket]);
+
   const openOrderModal = (type: 'bid' | 'ask') => {
-    setOrder({ type, qty: 0, price: 0 });
+    setOrder({ type, qty: 0, price: 0, orderType: 'limit' });
     setShowOrderModal(true);
   };
 
@@ -56,14 +105,46 @@ const BondDetails = ({ socket, bond, onBack }: BondDetailsProps) => {
     setOrder(undefined);
   };
 
+  const getBestPrice = (type: 'bid' | 'ask') => {
+    if (type === 'bid' && orderBook?.asks?.length) {
+      return orderBook.asks[0].price; // Best ask price for buying
+    }
+    if (type === 'ask' && orderBook?.bids?.length) {
+      return orderBook.bids[0].price; // Best bid price for selling
+    }
+    return 0;
+  };
+
   const handlePlaceOrder = async () => {
     console.log('Order placed:', order);
-    socket?.send(JSON.stringify({
-      type: order?.type,
-      qty: order?.qty,
-      price: order?.price
-    }))
+    if (socket && socket.readyState === WebSocket.OPEN) {
+      const orderData = {
+        type: order?.type,
+        qty: order?.qty,
+        price: order?.orderType === 'market' ? getBestPrice(order.type) : order?.price,
+        orderType: order?.orderType
+      };
+      
+      socket.send(JSON.stringify(orderData));
+    } else {
+      console.error('WebSocket is not connected');
+    }
     closeOrderModal();
+  };
+
+  const handleOrderTypeChange = (orderType: 'limit' | 'market') => {
+    setOrder((prevOrder) => {
+      if (!prevOrder) return undefined;
+      
+      const newOrder = { ...prevOrder, orderType };
+      
+      // For market orders, set price to best available price
+      if (orderType === 'market') {
+        newOrder.price = getBestPrice(prevOrder.type);
+      }
+      
+      return newOrder;
+    });
   };
 
   return (
@@ -133,7 +214,7 @@ const BondDetails = ({ socket, bond, onBack }: BondDetailsProps) => {
                   <span className="text-gray-600">Frequency</span>
                   <span className="font-semibold">{bond.frequency}</span>
                 </div>
-                <Link to={'/orders'}>Check your order</Link>
+                <Link to={'/my-order'}>Check your order</Link>
               </div>
             </div>
           </div>
@@ -144,18 +225,22 @@ const BondDetails = ({ socket, bond, onBack }: BondDetailsProps) => {
               <div className="bg-gradient-to-r from-gray-50 to-slate-50 px-4 py-3 border-b border-gray-200">
                 <div className="flex items-center justify-between">
                   <h3 className="font-semibold text-gray-900">Market Depth</h3>
-                 
+                  <div className="text-sm text-gray-500">
+                    {socket?.readyState === WebSocket.OPEN ? 
+                      <span className="text-green-600">● Connected</span> : 
+                      <span className="text-red-600">● Disconnected</span>
+                    }
+                  </div>
                 </div>
               </div>
 
-              
                 <div className="flex-1 p-4 overflow-hidden">
                   <div className="grid grid-cols-2 gap-6 h-full">
                     {/* Bids */}
                     <div className="flex flex-col">
                       <div className="flex items-center space-x-2 mb-3">
                         <div className="w-3 h-3 bg-emerald-500 rounded-full"></div>
-                        <h4 className="font-semibold text-emerald-600">Bids</h4>
+                        <h4 className="font-semibold text-emerald-600">Bids ({orderBook?.bids?.length || 0})</h4>
                       </div>
                       <div className="flex-1 overflow-hidden">
                         <div className="grid grid-cols-3 gap-3 text-xs font-semibold text-gray-500 uppercase tracking-wide pb-2 border-b border-gray-200">
@@ -164,8 +249,8 @@ const BondDetails = ({ socket, bond, onBack }: BondDetailsProps) => {
                           <span className="text-center">Orders</span>
                         </div>
                         
-                        <div className="mt-2 space-y-1">
-                          {orderBook?.bids.map((bid, index) => (
+                        <div className="mt-2 space-y-1 overflow-y-auto max-h-96">
+                          {orderBook?.bids?.length ? orderBook.bids.map((bid, index) => (
                             <div 
                               key={index} 
                               className="grid grid-cols-3 gap-3 pb-3 border-b border-gray-200 py-2 hover:bg-green-50 rounded transition-colors duration-150 cursor-pointer"
@@ -175,12 +260,14 @@ const BondDetails = ({ socket, bond, onBack }: BondDetailsProps) => {
                               <span className="text-center font-medium text-gray-900 text-sm"> {bid.qty} </span>
                               <span className="text-center text-gray-600 text-sm">{bid.orders ?? 1}</span>
                             </div>
-                          ))}
+                          )) : (
+                            <div className="text-center text-gray-500 py-8">No bids available</div>
+                          )}
                         </div>
                       </div>
                       <button 
                         onClick={() => openOrderModal('bid')}
-                        className="px-4 py-3 text-white bg-emerald-500 cursor-pointer rounded-lg font-medium transition-colors duration-200 text-sm"
+                        className="px-4 py-3 text-white bg-emerald-500 cursor-pointer rounded-lg font-medium transition-colors duration-200 text-sm hover:bg-emerald-600"
                       >
                         BUY
                       </button>
@@ -189,7 +276,7 @@ const BondDetails = ({ socket, bond, onBack }: BondDetailsProps) => {
                     <div className="flex flex-col">
                       <div className="flex items-center space-x-2 mb-3">
                         <div className="w-3 h-3 bg-red-500 rounded-full"></div>
-                        <h4 className="font-semibold text-red-500">Asks</h4>
+                        <h4 className="font-semibold text-red-500">Asks ({orderBook?.asks?.length || 0})</h4>
                       </div>
                       
                       <div className="flex-1 overflow-hidden">
@@ -199,8 +286,8 @@ const BondDetails = ({ socket, bond, onBack }: BondDetailsProps) => {
                           <span className="text-center">Orders</span>
                         </div>
                         
-                        <div className="mt-2 space-y-1">
-                          {orderBook?.asks.map((ask, index) => (
+                        <div className="mt-2 space-y-1 overflow-y-auto max-h-96">
+                          {orderBook?.asks?.length ? orderBook.asks.map((ask, index) => (
                             <div 
                               key={index} 
                               className="grid grid-cols-3 gap-3 py-2 pb-3 border-b border-gray-200 hover:bg-red-50 rounded transition-colors duration-150 cursor-pointer"
@@ -210,7 +297,9 @@ const BondDetails = ({ socket, bond, onBack }: BondDetailsProps) => {
                               <span className="text-center font-medium text-gray-900 text-sm">{ask.qty}</span>
                               <span className="text-center text-gray-600 text-sm">{ask.orders ?? 1}</span>
                             </div>
-                          ))}
+                          )) : (
+                            <div className="text-center text-gray-500 py-8">No asks available</div>
+                          )}
                         </div>
                       </div>
 
@@ -245,6 +334,38 @@ const BondDetails = ({ socket, bond, onBack }: BondDetailsProps) => {
             </div>
             
             <div className="p-6 space-y-4">
+              {/* Order Type Selection */}
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">Order Type</label>
+                <div className="flex space-x-2">
+                  <button
+                    onClick={() => handleOrderTypeChange('limit')}
+                    className={`flex-1 py-2 px-3 rounded-lg font-medium text-sm transition-colors duration-200 ${
+                      order?.orderType === 'limit'
+                        ? 'bg-blue-500 text-white'
+                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    }`}
+                  >
+                    Limit Order
+                  </button>
+                  <button
+                    onClick={() => handleOrderTypeChange('market')}
+                    className={`flex-1 py-2 px-3 rounded-lg font-medium text-sm transition-colors duration-200 ${
+                      order?.orderType === 'market'
+                        ? 'bg-blue-500 text-white'
+                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    }`}
+                  >
+                    Market Order
+                  </button>
+                </div>
+                {order?.orderType === 'market' && (
+                  <p className="text-xs text-gray-500 mt-1">
+                    Market orders execute immediately at the best available price
+                  </p>
+                )}
+              </div>
+
               <div>
                 <label className="block text-sm font-semibold text-gray-700 mb-2">Quantity</label>
                 <input 
@@ -254,7 +375,7 @@ const BondDetails = ({ socket, bond, onBack }: BondDetailsProps) => {
                     const value = Number(e.target.value);
                     setOrder((prevOrder) => prevOrder
                       ? { ...prevOrder, qty: value }
-                      : { type: order?.type ? 'bid' : 'ask', qty: value, price: 0 }
+                      : { type: 'bid', qty: value, price: 0, orderType: 'limit' }
                     );
                   }}
                   placeholder="Enter quantity"
@@ -263,7 +384,9 @@ const BondDetails = ({ socket, bond, onBack }: BondDetailsProps) => {
               </div>
               
               <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">Price (₹)</label>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                  Price (₹) {order?.orderType === 'market' && '(Auto-filled)'}
+                </label>
                 <input 
                   type="number" 
                   value={order?.price !== 0 ? order?.price : ""}
@@ -271,12 +394,21 @@ const BondDetails = ({ socket, bond, onBack }: BondDetailsProps) => {
                     const value = Number(e.target.value);
                     setOrder((prevOrder) => prevOrder
                       ? { ...prevOrder, price: value }
-                      : { type: order?.type ? 'bid' : 'ask', qty: 0, price: value }
+                      : { type: 'bid', qty: 0, price: value, orderType: 'limit' }
                     );
                   }}
                   step="0.01"
-                  className="w-full p-3 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200"
+                  placeholder="Enter price"
+                  disabled={order?.orderType === 'market'}
+                  className={`w-full p-3 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 ${
+                    order?.orderType === 'market' ? 'bg-gray-100 cursor-not-allowed' : ''
+                  }`}
                 />
+                {order?.orderType === 'market' && (
+                  <p className="text-xs text-blue-600 mt-1">
+                    Best {order.type === 'bid' ? 'Ask' : 'Bid'}: ₹{getBestPrice(order.type) || 'N/A'}
+                  </p>
+                )}
               </div>
 
               
@@ -291,7 +423,7 @@ const BondDetails = ({ socket, bond, onBack }: BondDetailsProps) => {
                           {(order.qty * order.price).toLocaleString()}
                         </>
                       )
-                      : 0
+                      : "₹ 0"
                     }
                   </span>
                 </div>
@@ -308,10 +440,15 @@ const BondDetails = ({ socket, bond, onBack }: BondDetailsProps) => {
               </button>
               <button 
                 onClick={handlePlaceOrder}
-                disabled={!order?.qty || !order.price}
+                disabled={
+                  !order?.qty || 
+                  (order?.orderType === 'limit' && !order.price) || 
+                  (order?.orderType === 'market' && !getBestPrice(order.type)) ||
+                  socket?.readyState !== WebSocket.OPEN
+                }
                 className={`flex-1 py-2 px-2 cursor-pointer rounded-lg font-semibold text-white transition-all duration-200 ${
                   order?.type === 'bid' 
-                    ? 'bg-emerald-500 hover:bg-green-700 disabled:bg-gray-400' 
+                    ? 'bg-emerald-500 hover:bg-emerald-700 disabled:bg-gray-400' 
                     : 'bg-red-500 hover:bg-red-700 disabled:bg-gray-400'
                 } disabled:cursor-not-allowed`}
               >

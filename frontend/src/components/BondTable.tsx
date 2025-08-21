@@ -104,9 +104,12 @@ const indianBonds = [
 ];
 
 export interface Order {
+  id: number;
+  date: number;
   price: number;
-  qty: number,
-  orders: number,
+  qty: number;
+  orders?: number;
+  type: 'bid' | 'ask';
 }
 
 export interface Bond {

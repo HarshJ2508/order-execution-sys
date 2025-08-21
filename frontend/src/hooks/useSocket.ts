@@ -19,9 +19,22 @@ const useSocket = (url: string = 'ws://localhost:8080') => {
       console.log("❌ Disconnected from WebSocket server");
     };
 
-    // return () => {
-    //   ws.close();
-    // };
+    ws.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        console.log(data);
+        if (data.id) {
+          localStorage.setItem('userID', data.id);
+        }
+      } catch (err) {
+        console.error("Invalid JSON received:", event.data);
+      }
+    };
+
+    return () => {
+      // ws.close();
+      localStorage.removeItem('userID');
+    };
   }, [url]);
 
   return { socket };
