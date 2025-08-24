@@ -329,7 +329,11 @@ const BondDetails = ({ socket, bond, onBack }: BondDetailsProps) => {
                     <span className="font-bold text-blue-600">₹{currentMarketPrice}</span>
                   </div>
                 )}
-                <Link to={'/my-order'}>Check my orders</Link>
+                <div className="flex justify-between items-center pt-2 border-t border-gray-200"></div>
+                <div className="flex flex-col gap-2">
+                  <Link to={'/my-order'} className="text-gray-600">Check my orders</Link> 
+                  <Link to={'/net-position'} className="text-gray-600">Check net positions</Link>
+                </div>
               </div>
             </div>
           </div>
@@ -527,38 +531,12 @@ const BondDetails = ({ socket, bond, onBack }: BondDetailsProps) => {
                     className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                   />
                   <label htmlFor="enable-stop-loss" className="text-sm font-semibold text-gray-700">
-                    Enable Stop-Loss / Take-Profit
+                    Enable Stop-Loss
                   </label>
                 </div>
 
                 {order.enableStopLoss && (
                   <div className="space-y-3 mt-3 p-3 bg-gray-50 rounded-lg">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">Type</label>
-                      <div className="flex space-x-2">
-                        <button
-                          onClick={() => setOrder(prev => prev ? { ...prev, stopLossType: 'stop_loss' } : undefined)}
-                          className={`flex-1 py-2 px-3 rounded-lg text-sm font-medium transition-all duration-200 ${
-                            order.stopLossType === 'stop_loss'
-                              ? 'bg-red-500 text-white'
-                              : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                          }`}
-                        >
-                          Stop-Loss
-                        </button>
-                        <button
-                          onClick={() => setOrder(prev => prev ? { ...prev, stopLossType: 'take_profit' } : undefined)}
-                          className={`flex-1 py-2 px-3 rounded-lg text-sm font-medium transition-all duration-200 ${
-                            order.stopLossType === 'take_profit'
-                              ? 'bg-green-500 text-white'
-                              : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                          }`}
-                        >
-                          Take-Profit
-                        </button>
-                      </div>
-                    </div>
-
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-2">
                         {order.stopLossType === 'stop_loss' ? 'Stop-Loss' : 'Take-Profit'} Price (₹)

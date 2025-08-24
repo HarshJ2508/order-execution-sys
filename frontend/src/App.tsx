@@ -2,6 +2,7 @@ import { Routes, Route } from "react-router-dom";
 import OrderExecutionSystem from "./components/OrderExecutionSystem";
 import useSocket from "./hooks/useSocket";
 import MyOrder from "./components/MyOrder";
+import NetPosition from "./components/NetPositionWindow";
 
 const App = () => {
   const { socket } = useSocket();
@@ -9,6 +10,7 @@ const App = () => {
   return <Routes>
     <Route path='/' element={<OrderExecutionSystem socket={socket} />} />
     <Route path='/my-order' element={<MyOrder socket={socket}/>} /> 
+    <Route path='/net-position' element={<NetPosition socket={socket}/>} /> 
   </Routes>
 }
 
