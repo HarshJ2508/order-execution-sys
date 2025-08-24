@@ -8,7 +8,7 @@ const App = () => {
 
   return <Routes>
     <Route path='/' element={<OrderExecutionSystem socket={socket} />} />
-    <Route path='/my-order' element={<MyOrder />} /> 
+    <Route path='/my-order' element={<MyOrder socket={socket}/>} /> 
   </Routes>
 }
 
